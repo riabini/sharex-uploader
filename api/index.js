@@ -1,5 +1,5 @@
 export const config = {
-  runtime: 'edge', // Включаем быстрый Edge-движок
+  runtime: 'edge',
 };
 
 export default async function handler(request) {
@@ -7,32 +7,33 @@ export default async function handler(request) {
   const CHAT_ID = process.env.CHAT_ID;
   const url = new URL(request.url);
 
-  // 1. Просмотр файла в браузере (GET-запрос)
+  // 1. GET: Просмотр картинок и видео
   if (request.method === "GET") {
     try {
       const parts = url.pathname.split("/").filter(Boolean);
+
       let fileId = "";
       let originalName = "file";
 
-      if (parts[0] === "v" && parts.length >= 3) {
+      // Поддержка ссылок вида /v/{file_id}/{name} и /api/v/{file_id}/{name}
+      if (parts[0] === "v" && parts.length >= 2) {
         fileId = parts[1];
-        originalName = parts.slice(2).join("_");
-      } else if (parts[0] === "f" || parts[0] === "i") {
-        const tgFilePath = parts.slice(1, 3).join("/");
-        originalName = parts.slice(3).join("_") || parts[parts.length - 1];
-        return await fetchAndServe(`https://api.telegram.org/file/bot${BOT_TOKEN}/${tgFilePath}`, originalName);
+        originalName = parts.slice(2).join("_") || "file";
+      } else if (parts[0] === "api" && parts[1] === "v" && parts.length >= 3) {
+        fileId = parts[2];
+        originalName = parts.slice(3).join("_") || "file";
       } else {
-        return new Response("ShareX TG Uploader is running!", { status: 200 });
+        return new Response("ShareX TG Uploader is running on Vercel!", { status: 200 });
       }
 
       try { originalName = decodeURIComponent(originalName); } catch (e) {}
 
-      // Динамический запрос свежего пути по вечному file_id
+      // Запрашиваем актуальный путь к файлу у Telegram
       const fileRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`);
       const fileData = await fileRes.json();
 
       if (!fileData.ok) {
-        return new Response("Файл не найден в Telegram", { status: 404 });
+        return new Response("File not found in Telegram", { status: 404 });
       }
 
       const liveFileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.result.file_path}`;
@@ -43,7 +44,7 @@ export default async function handler(request) {
     }
   }
 
-  // 2. Загрузка из ShareX (POST-запрос)
+  // 2. POST: Загрузка из ShareX
   if (request.method === "POST") {
     try {
       const formData = await request.formData();
@@ -71,7 +72,7 @@ export default async function handler(request) {
       else if (sendData.result.video) fileId = sendData.result.video.file_id;
       else if (sendData.result.animation) fileId = sendData.result.animation.file_id;
 
-      // Возвращаем вечную ссылку на домене Vercel
+      // Формируем вечную ссылку
       const permanentUrl = `${url.origin}/v/${fileId}/${encodeURIComponent(originalName)}`;
 
       return new Response(permanentUrl, {
@@ -86,10 +87,10 @@ export default async function handler(request) {
   return new Response("Method not allowed", { status: 405 });
 }
 
-// Вспомогательная функция отдачи файла
+// Отдача файла с предпросмотром в браузере
 async function fetchAndServe(tgFileUrl, originalName) {
   const fileStream = await fetch(tgFileUrl);
-  if (!fileStream.ok) return new Response("Ошибка загрузки из Telegram", { status: 404 });
+  if (!fileStream.ok) return new Response("TG download error", { status: 404 });
 
   let contentType = "application/octet-stream";
   const lower = originalName.toLowerCase();
